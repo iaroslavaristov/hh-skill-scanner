@@ -1,12 +1,14 @@
-package main 
+package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"sort"
+	"strings"
 
 	"hh-parser/internal/infrastructure/gemini"
 	"hh-parser/internal/infrastructure/hh"
@@ -19,50 +21,71 @@ func main() {
 	_ = godotenv.Load()
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
-		log.Fatal("GEMINI_API_KEY is not set in .env file")
+		log.Fatal("Ошибка: GEMINI_API_KEY не найден в .env")
 	}
 
-	query := flag.String("query", "Golang developer", "Вакансия для поиска")
-	limit := flag.Int("limit", 5, "Количество вакансий для анализа")
+	// Определяем флаги
+	queryFlag := flag.String("query", "", "Название вакансии (например, 'Frontend developer')")
+	limitFlag := flag.Int("limit", 10, "Количество вакансий для анализа")
 	flag.Parse()
+
+	searchQuery := *queryFlag
+
+	// Если флаг пустой, спрашиваем пользователя в консоли
+	if searchQuery == "" {
+		fmt.Print("Введите название позиции для анализа: ")
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		searchQuery = strings.TrimSpace(input)
+	}
+
+	if searchQuery == "" {
+		log.Fatal("Ошибка: поисковый запрос не может быть пустым")
+	}
+
 	ctx := context.Background()
 
-	// 3. Инициализация адаптеровол
+	// Инициализация слоев
 	hhClient := hh.NewClient()
 	geminiClient, err := gemini.NewClient(ctx, apiKey)
 	if err != nil {
-		log.Fatalf("Gemini init error: %v", err)
+		log.Fatalf("Ошибка Gemini: %v", err)
 	}
 
 	parser := usecase.NewParser(hhClient, geminiClient)
 
-	fmt.Printf("Анализ вакансий: %s...\n", *query)
+	fmt.Printf("\nАнализирование топ-%d вакансий по запросу: '%s'...\n", *limitFlag, searchQuery)
 
-	stats, err := parser.Run(ctx, *query, *limit)
+	stats, err := parser.Run(ctx, searchQuery, *limitFlag)
 	if err != nil {
-		log.Fatalf("Execution error: %v", err)
+		log.Fatalf("Ошибка при выполнении: %v", err)
 	}
 
-	printResults(stats)
+	printFinalStats(stats)
 }
 
-func printResults(stats map[string]int) {
+func printFinalStats(stats map[string]int) {
+	if len(stats) == 0 {
+		fmt.Println("Технологии не найдены.")
+		return
+	}
+
 	type kv struct {
 		Key   string
 		Value int
 	}
-	var sorted []kv
+	var ss []kv
 	for k, v := range stats {
-		sorted = append(sorted, kv{k, v})
+		ss = append(ss, kv{k, v})
 	}
-
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Value > sorted[j].Value
+	sort.Slice(ss, func(i, j int) bool {
+		return ss[i].Value > ss[j].Value
 	})
 
-	fmt.Println("\n📊 Популярность технологий:")
-	for _, entry := range sorted {
-		fmt.Printf("%-15s: %d\n", entry.Key, entry.Value)
+	fmt.Println("\nАнализ закончен. Технологии:")
+	fmt.Println("--------------------------------------------------")
+	for i, entry := range ss {
+		if i >= 20 { break }
+		fmt.Printf("%2d) %-15s — встретилось %d раз(а)\n", i+1, entry.Key, entry.Value)
 	}
-}
 }
