@@ -52,8 +52,8 @@ make build
 ```
 ### 3. Запуск анализа
 ```bash
-# q - запрос, l - лимит вакансий
-make run q="Golang developer" l=50
+# -query - запрос, -limit - лимит вакансий
+./scanner -query="Golang developer" -limit=10
 ```
 
 ## Пример работы
