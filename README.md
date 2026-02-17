@@ -1,4 +1,4 @@
-# HH Skill Scanner (Gemini 3.0 Powered)
+# HH Skill Scanner (Gemini 2.5 Powered)
 
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![AI](https://img.shields.io/badge/AI-Gemini%203.0%20Flash-orange?style=flat)](https://ai.google.dev/)
