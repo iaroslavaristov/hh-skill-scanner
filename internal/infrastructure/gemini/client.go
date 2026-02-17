@@ -22,7 +22,7 @@ func NewClient(ctx context.Context, apiKey string) (*Client, error) {
 		return nil, fmt.Errorf("failed to create genai client: %w", err)
 	}
 
-	model := client.GenerativeModel("gemini-3-flash-preview")
+	model := client.GenerativeModel("gemini-2.5-flash-lite")
 	model.SetTemperature(0.1)
 	model.ResponseMIMEType = "application/json"
 

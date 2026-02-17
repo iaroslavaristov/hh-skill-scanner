@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/schollz/progressbar/v3"
 	"hh-parser/internal/domain"
@@ -55,10 +56,12 @@ func (p *Parser) Analyze(query string, limit int) ([]domain.Skill, error) {
 		toProcess = append(toProcess, desc)
 		toProcessIDs = append(toProcessIDs, v.ID)
 
-		if len(toProcess) >= 5 {
+		if len(toProcess) >= 15 {
 			p.processBatch(toProcess, toProcessIDs, skillMap, bar)
 			toProcess = nil
 			toProcessIDs = nil
+
+			time.Sleep(3 * time.Second)
 		}
 	}
 
