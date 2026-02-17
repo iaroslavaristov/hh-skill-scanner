@@ -1,14 +1,25 @@
-package usecase 
+package usecase
 
-import "context"
+import (
+	"context"
+	"hh-parser/internal/domain"
+	"sync"
+	"time"
+)
+
+type Cache interface {
+	Get(id string) ([]string, bool)
+	Set(id string, skills []string)
+}
 
 type Parser struct {
 	provider JobProvider
 	analyzer Analyzer
+	cache    Cache
 }
 
-func NewParser(p JobProvider, a Analyzer) *Parser {
-	return &Parser{provider: p, analyzer: a}
+func NewParser(p JobProvider, a Analyzer, c Cache) *Parser {
+	return &Parser{provider: p, analyzer: a, cache: c}
 }
 
 func (p *Parser) Run(ctx context.Context, query string, limit int) (map[string]int, error) {
@@ -18,46 +29,44 @@ func (p *Parser) Run(ctx context.Context, query string, limit int) (map[string]i
 	}
 
 	stats := make(map[string]int)
-	mu := &sync.Mutex{}
-	
-	jobs := make(chan domain.Vacancy, len(vacancies))
-	results := make(chan []string, len(vacancies))
-
-
-	workerCount := 5 
+	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	for w := 1; w <= workerCount; w++ {
+	jobs := make(chan domain.Vacancy)
+
+	workerCount := 3 
+	
+	for w := 0; w < workerCount; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for v := range jobs {
-				content := v.Title + " " + v.Description
-				skills, _ := p.analyzer.ExtractSkills(ctx, content)
-				results <- skills
+				var skills []string
+				var found bool
+
+				if skills, found = p.cache.Get(v.ID); !found {
+					content := v.Title + " " + v.Description
+					skills, _ = p.analyzer.ExtractSkills(ctx, content)
+					
+					p.cache.Set(v.ID, skills)
+					
+					time.Sleep(2 * time.Second) 
+				}
+
+				mu.Lock()
+				for _, s := range skills {
+					stats[s]++
+				}
+				mu.Unlock()
 			}
 		}()
 	}
-
 
 	for _, v := range vacancies {
 		jobs <- v
 	}
 	close(jobs)
-
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	for skills := range results {
-		mu.Lock()
-		for _, s := range skills {
-			stats[s]++
-		}
-		mu.Unlock()
-	}
+	wg.Wait()
 
 	return stats, nil
 }

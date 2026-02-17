@@ -24,14 +24,12 @@ func main() {
 		log.Fatal("Ошибка: GEMINI_API_KEY не найден в .env")
 	}
 
-	// Определяем флаги
 	queryFlag := flag.String("query", "", "Название вакансии (например, 'Frontend developer')")
 	limitFlag := flag.Int("limit", 10, "Количество вакансий для анализа")
 	flag.Parse()
 
 	searchQuery := *queryFlag
 
-	// Если флаг пустой, спрашиваем пользователя в консоли
 	if searchQuery == "" {
 		fmt.Print("Введите название позиции для анализа: ")
 		reader := bufio.NewReader(os.Stdin)
@@ -45,14 +43,14 @@ func main() {
 
 	ctx := context.Background()
 
-	// Инициализация слоев
 	hhClient := hh.NewClient()
 	geminiClient, err := gemini.NewClient(ctx, apiKey)
 	if err != nil {
 		log.Fatalf("Ошибка Gemini: %v", err)
 	}
+	fileCache := cache.NewFileCache("skills_cache.json")
 
-	parser := usecase.NewParser(hhClient, geminiClient)
+	parser := usecase.NewParser(hhClient, geminiClient, fileCache)
 
 	fmt.Printf("\nАнализирование топ-%d вакансий по запросу: '%s'...\n", *limitFlag, searchQuery)
 
