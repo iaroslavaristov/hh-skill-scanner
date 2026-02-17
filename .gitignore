@@ -9,6 +9,8 @@ vendor/
 
 .env
 
+./scanner
+
 .idea/
 .vscode/
 *.swp

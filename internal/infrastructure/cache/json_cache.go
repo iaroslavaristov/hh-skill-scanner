@@ -7,15 +7,15 @@ import (
 )
 
 type FileCache struct {
-	mu sync.RWMutex
+	mu       sync.RWMutex
 	filePath string
-	data map[string][]string
+	data     map[string][]string
 }
 
 func NewFileCache(path string) *FileCache {
 	cache := &FileCache{
 		filePath: path,
-		data: make(map[string][]string),
+		data:     make(map[string][]string),
 	}
 	cache.load()
 	return cache
@@ -25,25 +25,29 @@ func (c *FileCache) Get(id string) ([]string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	skills, ok := c.data[id]
-	return skills, ok 
+	return skills, ok
 }
 
-func (c *FileCache) Set(id string, skills []string) {
+func (c *FileCache) Set(id string, skills []string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.data[id] = skills
-	c.save()
+	return nil
+}
+
+func (c *FileCache) Save() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	data, err := json.MarshalIndent(c.data, "", " ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(c.filePath, data, 0644)
 }
 
 func (c *FileCache) load() {
-    file, err := os.ReadFile(c.filePath)
-    if err == nil {
-        json.Unmarshal(file, &c.data)
-    }
+	file, err := os.ReadFile(c.filePath)
+	if err == nil {
+		json.Unmarshal(file, &c.data)
+	}
 }
-
-func (c *FileCache) save() {
-	data, _ := json.MarshalIndent(c.data, ""," ")
-	_ = os.WriteFile(c.filePath, data, 0644)
-}
-
