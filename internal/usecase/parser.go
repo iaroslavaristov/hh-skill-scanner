@@ -29,7 +29,7 @@ func (p *Parser) Run(ctx context.Context, query string, limit int) (map[string]i
 	}
 
 	stats := make(map[string]int)
-	batchSize := 5
+	batchSize := 20
 	
 	for i := 0; i < len(vacancies); i += batchSize {
 		end := i + batchSize
@@ -64,7 +64,7 @@ func (p *Parser) Run(ctx context.Context, query string, limit int) (map[string]i
 				p.updateStats(stats, skills)
 			}
 
-			time.Sleep(3 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 		}
 	}
 
