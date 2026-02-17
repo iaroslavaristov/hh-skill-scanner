@@ -36,10 +36,10 @@ func (c *FileCache) Set(id string, skills []string) {
 }
 
 func (c *FileCache) load() {
-	file, err := os.ReadFile(c.filePath)
-	if err != nil {
-		json.Unmarshal(file, &c.data)
-	}
+    file, err := os.ReadFile(c.filePath)
+    if err == nil {
+        json.Unmarshal(file, &c.data)
+    }
 }
 
 func (c *FileCache) save() {
