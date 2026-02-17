@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
@@ -32,33 +33,32 @@ func NewClient(ctx context.Context, apiKey string) (*Client, error) {
 }
 
 func (c *Client) ExtractSkills(texts []string) ([]string, error) {
-	if len(texts) == 0 {
-		return []string{}, nil
-	}
-
 	ctx := context.Background()
 	var promptBuilder strings.Builder
-
-	promptBuilder.WriteString("Extract all technical terms, frameworks, languages, and software tools from these job descriptions. Return them as a flat JSON array of strings. Example: [\"1C\", \"SQL\", \"SKD\", \"ERP\"]. Focus on professional keywords. Return ONLY the JSON array, no other text.\n")
+	promptBuilder.WriteString("Extract all technical IT skills as a flat JSON array of strings. No prose.\n")
 
 	for i, t := range texts {
-		if len(t) > 2000 {
-			t = t[:2000]
+		// РАДИКАЛЬНАЯ ОЧИСТКА
+		cleanText := fixUtf8(t)
+
+		if len(cleanText) > 2000 {
+			cleanText = cleanText[:2000]
 		}
-		promptBuilder.WriteString(fmt.Sprintf("Text %d: %s\n", i+1, t))
+		promptBuilder.WriteString(fmt.Sprintf("Job %d: %s\n", i+1, cleanText))
 	}
 
-	resp, err := c.model.GenerateContent(ctx, genai.Text(promptBuilder.String()))
+	finalPrompt := fixUtf8(promptBuilder.String())
+
+	resp, err := c.model.GenerateContent(ctx, genai.Text(finalPrompt))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gemini generation error: %w", err)
 	}
 
 	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-		return nil, fmt.Errorf("gemini returned no data")
+		return nil, fmt.Errorf("empty response")
 	}
 
 	rawJSON := fmt.Sprint(resp.Candidates[0].Content.Parts[0])
-	
 	rawJSON = strings.TrimSpace(rawJSON)
 	rawJSON = strings.TrimPrefix(rawJSON, "```json")
 	rawJSON = strings.TrimPrefix(rawJSON, "```")
@@ -67,9 +67,25 @@ func (c *Client) ExtractSkills(texts []string) ([]string, error) {
 
 	var result []string
 	if err := json.Unmarshal([]byte(rawJSON), &result); err != nil {
-		fmt.Printf("\n[DEBUG] Ошибка парсинга. Ответ ИИ: %s\n", rawJSON)
-		return nil, err
+		return nil, fmt.Errorf("json error: %w | raw: %s", err, rawJSON)
 	}
 
 	return result, nil
+}
+
+func fixUtf8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	v := make([]rune, 0, len(s))
+	for i, r := range s {
+		if r == utf8.RuneError {
+			_, size := utf8.DecodeRuneInString(s[i:])
+			if size == 1 {
+				continue
+			}
+		}
+		v = append(v, r)
+	}
+	return string(v)
 }
