@@ -1,99 +1,83 @@
 package hh
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"hh-parser/internal/domain"
 	"net/http"
-	"regexp"
-	"strings"
+	"time"
+
+	"hh-parser/internal/domain"
 )
 
 type Client struct {
-	apiBase string	
-	http *http.Client
+	httpClient *http.Client
+}
+
+type hhSearchResponse struct {
+	Items []struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		URL   string `json:"url"`
+	} `json:"items"`
+}
+
+type hhDetailResponse struct {
+	Description string `json:"description"`
 }
 
 func NewClient() *Client {
-	return &Client {
-		apiBase: "https://api.hh.ru",
-		http: &http.Client{},
+	return &Client{
+		httpClient: &http.Client{
+			Timeout: time.Second * 10,
+		},
 	}
 }
 
-func (c *Client) Search(ctx context.Context, query string, limit int) ([]domain.Vacancy, error) {
-	var allVacancies []domain.Vacancy
-	perPage := 100
-	page := 0
+func (c *Client) SearchVacancies(query string, limit int) ([]domain.Vacancy, error) {
+	url := fmt.Sprintf("https://api.hh.ru/vacancies?text=%s&per_page=%d", query, limit)
+	
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "HH-Skill-Scanner/1.0")
 
-	for {
-		url := fmt.Sprintf("%s/vacancies?text=%s&per_page=%d&page=%p", c.apiBase, query, perPage, page)
-		
-		req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
-		req.Header.Set("User-Agent", "HH-Tech-Scanner/1.0")
-
-		resp, err := c.http.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		
-		var data struct {
-			Items []struct {
-				ID string `json:"id"`
-			} `json:"items"`
-			Found int `json:"found"`
-			Pages int `json:"pages"`
-		}
-		json.NewDecoder(resp.Body).Decode(&data)
-		resp.Body.Close()
-
-		for _, item := range data.Items {
-			v, err := c.getDetail(ctx, item.ID)
-			if err == nil {
-				allVacancies = append(allVacancies)
-
-				if limit > 0 && len(allVacancies) >= limit {
-					return allVacancies, nil
-				}
-			}
-		}
-
-		page++
-		if page >= data.Pages || len(allVacancies) >= 2000 {
-			break
-		}
-	}
-
-	return allVacancies, nil
-}
-
-func (c *Client) getDetail(ctx context.Context, id string) (domain.Vacancy, error) {
-	url := fmt.Sprintf("%s/vacancies/%s", c.apiBase, id)
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
-	req.Header.Set("User-Agent", "HH-Tech-Scanner/1.0")
-
-	resp, err := c.http.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return domain.Vacancy{}, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
-	var detail struct {
-		Name string `json: "name"`
-		Description string `json:"description"`
+	var searchResp hhSearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
+		return nil, err
 	}
-	json.NewDecoder(resp.Body).Decode(&detail)
 
-	return domain.Vacancy{
-		ID: id,
-		Title: detail.Name,
-		Description: cleanHTML(detail.Description)
+	var vacancies []domain.Vacancy
+	for _, item := range searchResp.Items {
+		vacancies = append(vacancies, domain.Vacancy{
+			ID:    item.ID,
+			Title: item.Name,
+			URL:   item.URL,
+		})
+	}
 
-	}, nil
-} 
+	return vacancies, nil
+}
 
-func cleanHTML(s string) string {
-	 r := regexp.MustCompile("<[^>]*>")
-	 return strings.TrimSpace(r.ReplaceAllString(s, " "))
+func (c *Client) GetFullDescription(vacancyID string) (string, error) {
+	url := fmt.Sprintf("https://api.hh.ru/vacancies/%s", vacancyID)
+
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "HH-Skill-Scanner/1.0")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var detailResp hhDetailResponse
+	if err := json.NewDecoder(resp.Body).Decode(&detailResp); err != nil {
+		return "", err
+	}
+
+	return detailResp.Description, nil
 }

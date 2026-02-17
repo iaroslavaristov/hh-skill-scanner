@@ -1,151 +1,108 @@
 package usecase
 
 import (
-	"context"
-<<<<<<< HEAD
-	"fmt"
-	"hh-parser/internal/domain"
+	"sort"
 	"strings"
-	"time"
 
 	"github.com/schollz/progressbar/v3"
-)
-
-=======
 	"hh-parser/internal/domain"
-	"sync"
-	"time"
 )
 
-type Cache interface {
-	Get(id string) ([]string, bool)
-	Set(id string, skills []string)
-}
-
->>>>>>> feature/cli-base
 type Parser struct {
-	provider JobProvider
-	analyzer Analyzer
-	cache    Cache
+	hh     HHClient
+	ai     GeminiClient
+	cache  Cache
 }
 
-func NewParser(p JobProvider, a Analyzer, c Cache) *Parser {
-	return &Parser{provider: p, analyzer: a, cache: c}
+func NewParser(hh HHClient, ai GeminiClient, cache Cache) *Parser {
+	return &Parser{
+		hh:    hh,
+		ai:    ai,
+		cache: cache,
+	}
 }
 
-func (p *Parser) Run(ctx context.Context, query string, limit int) (map[string]int, error) {
-	vacancies, err := p.provider.Search(ctx, query, limit)
+func (p *Parser) Analyze(query string, limit int) ([]domain.Skill, error) {
+	vacancies, err := p.hh.SearchVacancies(query, limit)
 	if err != nil {
 		return nil, err
 	}
 
-<<<<<<< HEAD
-	total := len(vacancies)
-	if total == 0 {
-		return nil, fmt.Errorf("вакансий по запросу '%s' не найдено", query)
-	}
+	bar := progressbar.Default(int64(len(vacancies)), "Анализ вакансий")
+	skillMap := make(map[string]int)
 
-	stats := make(map[string]int)
-	batchSize := 20
+	var toProcess []string
+	var toProcessIDs []string
 
-	bar := progressbar.NewOptions(total,
-		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionShowBytes(false),
-		progressbar.OptionSetWidth(15),
-		progressbar.OptionSetDescription("[cyan][1/3][reset] Анализ навыков..."),
-		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "[green]track[reset]",
-			SaucerHead:    "[green]track[reset]",
-			SaucerPadding: " ",
-			BarStart:      "|",
-			BarEnd:        "|",
-		}),
-	)
-
-	for i := 0; i < total; i += batchSize {
-		end := i + batchSize
-		if end > total {
-			end = total
+	for _, v := range vacancies {
+		if cachedSkills, found := p.cache.Get(v.ID); found {
+			p.addSkillsToMap(skillMap, cachedSkills)
+			bar.Add(1)
+			continue
 		}
 
-=======
-	stats := make(map[string]int)
-	batchSize := 20
-	
-	for i := 0; i < len(vacancies); i += batchSize {
-		end := i + batchSize
-		if end > len(vacancies) {
-			end = len(vacancies)
-		}
-		
->>>>>>> feature/cli-base
-		currentBatch := vacancies[i:end]
-		var textsToProcess []string
-		var batchIds []string
-
-		for _, v := range currentBatch {
-			if skills, found := p.cache.Get(v.ID); found {
-				p.updateStats(stats, skills)
-<<<<<<< HEAD
-				bar.Add(1)
-=======
->>>>>>> feature/cli-base
-			} else {
-				textsToProcess = append(textsToProcess, v.Title+" "+v.Description)
-				batchIds = append(batchIds, v.ID)
-			}
+		desc, err := p.hh.GetFullDescription(v.ID)
+		if err != nil {
+			bar.Add(1)
+			continue
 		}
 
-		if len(textsToProcess) > 0 {
-<<<<<<< HEAD
-			batchResults, err := p.analyzer.ExtractSkillsBatch(ctx, textsToProcess)
-			if err != nil {
-				bar.Add(len(textsToProcess))
-=======
-			fmt.Printf("Отправляю пакет из %d вакансий в Gemini...\n", len(textsToProcess))
+		toProcess = append(toProcess, desc)
+		toProcessIDs = append(toProcessIDs, v.ID)
 
-			batchResults, err := p.analyzer.ExtractSkillsBatch(ctx, textsToProcess)
-			if err != nil {
-				fmt.Printf("Ошибка батча: %v\n", err)
->>>>>>> feature/cli-base
-				continue
-			}
-
-			for idx, skills := range batchResults {
-<<<<<<< HEAD
-				if idx < len(batchIds) {
-					p.cache.Set(batchIds[idx], skills)
-					p.updateStats(stats, skills)
-				}
-				bar.Add(1)
-			}
-			
-=======
-				p.cache.Set(batchIds[idx], skills)
-				p.updateStats(stats, skills)
-			}
-
->>>>>>> feature/cli-base
-			time.Sleep(500 * time.Millisecond)
+		if len(toProcess) >= 20 {
+			p.processBatch(toProcess, toProcessIDs, skillMap, bar)
+			toProcess = nil
+			toProcessIDs = nil
 		}
 	}
 
-<<<<<<< HEAD
-	fmt.Println()
-=======
->>>>>>> feature/cli-base
-	return stats, nil
+	if len(toProcess) > 0 {
+		p.processBatch(toProcess, toProcessIDs, skillMap, bar)
+	}
+
+	p.cache.Save()
+
+	return p.sortSkills(skillMap), nil
 }
 
-func (p *Parser) updateStats(stats map[string]int, skills []string) {
-	for _, s := range skills {
-<<<<<<< HEAD
-		name := strings.ToLower(strings.TrimSpace(s))
-		if name != "" && name != "none" {
-			stats[name]++
-		}
-=======
-		stats[strings.ToLower(strings.TrimSpace(s))]++
->>>>>>> feature/cli-base
+func (p *Parser) processBatch(descs []string, ids []string, skillMap map[string]int, bar *progressbar.ProgressBar) {
+	extracted, err := p.ai.ExtractSkills(descs)
+	if err != nil {
+		bar.Add(len(descs))
+		return
 	}
+
+	for i, skillsStr := range extracted {
+		skills := strings.Split(skillsStr, ",")
+		var cleaned []string
+		for _, s := range skills {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				cleaned = append(cleaned, s)
+			}
+		}
+		p.cache.Set(ids[i], cleaned)
+		p.addSkillsToMap(skillMap, cleaned)
+		bar.Add(1)
+	}
+}
+
+func (p *Parser) addSkillsToMap(m map[string]int, skills []string) {
+	for _, s := range skills {
+		m[strings.Title(strings.ToLower(s))]++
+	}
+}
+
+func (p *Parser) sortSkills(m map[string]int) []domain.Skill {
+	var result []domain.Skill
+	for name, count := range m {
+		result = append(result, domain.Skill{Name: name, Count: count})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Count > result[j].Count
+	})
+
+	return result
 }

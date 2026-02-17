@@ -1,14 +1,18 @@
 package usecase
 
-import (
-	"context"
-	"hh-parser/internal/domain"
-)
+import "hh-parser/internal/domain"
 
-type JobProvider interface {
-	Search(ctx context.Context, query string, limit int) ([]domain.Vacancy, error)
+type HHClient interface {
+	SearchVacancies(query string, limit int) ([]domain.Vacancy, error)
+	GetFullDescription(vacancyID string) (string, error)
 }
 
-type Analyzer interface {
-	ExtractSkills(ctx context.Context, text string) ([]string, error)
+type GeminiClient interface {
+	ExtractSkills(descriptions []string) ([]string, error)
+}
+
+type Cache interface {
+	Get(vacancyID string) ([]string, bool)
+	Set(vacancyID string, skills []string) error
+	Save() error
 }

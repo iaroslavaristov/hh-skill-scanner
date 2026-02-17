@@ -1,13 +1,18 @@
 package domain
 
 type Vacancy struct {
-	ID string
-	Title string
+	ID          string
+	Title       string
 	Description string
-	Skills []string 
+	URL         string
 }
 
-type Result struct {
-	TechName string
+type Skill struct {
+	Name  string
 	Count int
+}
+
+type Config struct {
+	GeminiAPIKey string
+	SkillsFile   string
 }
