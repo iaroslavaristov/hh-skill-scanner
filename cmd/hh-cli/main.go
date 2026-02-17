@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -27,27 +28,27 @@ func main() {
 		log.Fatal("GEMINI_API_KEY must be set")
 	}
 
+	ctx := context.Background()
+
 	hhClient := hh.NewClient()
-	geminiClient, err := gemini.NewClient(apiKey)
+	
+	geminiClient, err := gemini.NewClient(ctx, apiKey)
 	if err != nil {
 		log.Fatalf("Failed to init Gemini: %v", err)
 	}
 
-	jsonCache, err := cache.NewJSONCache("skills_cache.json")
-	if err != nil {
-		log.Fatalf("Failed to init cache: %v", err)
-	}
+	fileCache := cache.NewFileCache("skills_cache.json")
 
-	parser := usecase.NewParser(hhClient, geminiClient, jsonCache)
+	parser := usecase.NewParser(hhClient, geminiClient, fileCache)
 
-	fmt.Printf("🔍 Searching for %d vacancies: %s\n", *limit, *query)
+	fmt.Printf("Searching for %d vacancies: %s\n", *limit, *query)
 
 	skills, err := parser.Analyze(*query, *limit)
 	if err != nil {
 		log.Fatalf("Analysis failed: %v", err)
 	}
 
-	fmt.Printf("\n📊 Top Skills for %s:\n", *query)
+	fmt.Printf("\nTop Skills for %s:\n", *query)
 	for i, skill := range skills {
 		if i >= 15 {
 			break
