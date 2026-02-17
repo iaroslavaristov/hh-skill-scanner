@@ -9,7 +9,10 @@ vendor/
 
 .env
 
-./scanner
+scanner
+scanner.exe
+
+skills_cache.json
 
 .idea/
 .vscode/
