@@ -29,44 +29,50 @@ func (p *Parser) Run(ctx context.Context, query string, limit int) (map[string]i
 	}
 
 	stats := make(map[string]int)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-
-	jobs := make(chan domain.Vacancy)
-
-	workerCount := 3 
+	batchSize := 5
 	
-	for w := 0; w < workerCount; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for v := range jobs {
-				var skills []string
-				var found bool
+	for i := 0; i < len(vacancies); i += batchSize {
+		end := i + batchSize
+		if end > len(vacancies) {
+			end = len(vacancies)
+		}
+		
+		currentBatch := vacancies[i:end]
+		var textsToProcess []string
+		var batchIds []string
 
-				if skills, found = p.cache.Get(v.ID); !found {
-					content := v.Title + " " + v.Description
-					skills, _ = p.analyzer.ExtractSkills(ctx, content)
-					
-					p.cache.Set(v.ID, skills)
-					
-					time.Sleep(2 * time.Second) 
-				}
-
-				mu.Lock()
-				for _, s := range skills {
-					stats[s]++
-				}
-				mu.Unlock()
+		for _, v := range currentBatch {
+			if skills, found := p.cache.Get(v.ID); found {
+				p.updateStats(stats, skills)
+			} else {
+				textsToProcess = append(textsToProcess, v.Title+" "+v.Description)
+				batchIds = append(batchIds, v.ID)
 			}
-		}()
-	}
+		}
 
-	for _, v := range vacancies {
-		jobs <- v
+		if len(textsToProcess) > 0 {
+			fmt.Printf("Отправляю пакет из %d вакансий в Gemini...\n", len(textsToProcess))
+
+			batchResults, err := p.analyzer.ExtractSkillsBatch(ctx, textsToProcess)
+			if err != nil {
+				fmt.Printf("Ошибка батча: %v\n", err)
+				continue
+			}
+
+			for idx, skills := range batchResults {
+				p.cache.Set(batchIds[idx], skills)
+				p.updateStats(stats, skills)
+			}
+
+			time.Sleep(3 * time.Second)
+		}
 	}
-	close(jobs)
-	wg.Wait()
 
 	return stats, nil
+}
+
+func (p *Parser) updateStats(stats map[string]int, skills []string) {
+	for _, s := range skills {
+		stats[strings.ToLower(strings.TrimSpace(s))]++
+	}
 }

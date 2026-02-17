@@ -2,11 +2,11 @@ package gemini
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
 )
 
 type Client struct {
@@ -29,15 +29,17 @@ func NewClient(cxt context.Context, apiKey string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) ExtractSkills(ctx context.Context, text string) ([]string, error) {
-	prompt := fmt.Sprintf(`
-		Проанализируй текст вакансии ниже. 
-		Извлеки из него список IT-технологий, языков программирования и инструментов.
-		Верни ответ строго в виде списка через запятую. 
-		Если технологий не найдено, напиши "none".
-		Текст: %s`, text)
+func (c *Client) ExtractSkillsBatch(ctx context.Context, texts []string) ([][]string, error) {
+	var promptBuilder strings.Builder
+	promptBuilder.WriteString("Проанализируй список вакансий и извлеки IT-технологии для каждой. " +
+		"Верни ответ СТРОГО в формате JSON: массив массивов строк, где каждый внутренний массив — это навыки одной вакансии. " +
+		"Пример: [[\"go\", \"docker\"], [\"react\", \"js\"]].\n\n")
 
-	resp, err := c.model.GenerateContext(ctx, genai.Text(prompt))
+	for i, t := range texts {
+		promptBuilder.WriteString(fmt.Sprintf("Вакансия %d: %s\n\n", i+1, t))
+	}
+
+	resp, err := c.model.GenerateContent(ctx, genai.Text(promptBuilder.String()))
 	if err != nil {
 		return nil, err
 	}
@@ -46,19 +48,15 @@ func (c *Client) ExtractSkills(ctx context.Context, text string) ([]string, erro
 		return nil, nil
 	}
 
-	content := fmt.Sprint(resp.Candidates[0].Content.Parts[0])
-	if strings.ToLower(strings.TrimSpace(content)) == "none" {
-		return nil, nil
+	rawJSON := fmt.Sprint(resp.Candidates[0].Content.Parts[0])
+	rawJSON = strings.TrimPrefix(rawJSON, "```json")
+	rawJSON = strings.TrimSuffix(rawJSON, "```")
+	rawJSON = strings.TrimSpace(rawJSON)
+
+	var result [][]string
+	if err := json.Unmarshal([]byte(rawJSON), &result); err != nil {
+		return nil, fmt.Errorf("ошибка парсинга JSON от Gemini: %w", err)
 	}
 
-	parts := strings.Split(content, ",")
-	var skills []string
-	for _, p := range parts {
-		trimmed := strings.ToLower(strings.TrimSpace(p))
-		if trimmed != "" {
-			skills = append(skills, trimmed)
-		}
-	}
-
-	return skills, nil
+	return result, nil
 }
